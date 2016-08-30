@@ -1,5 +1,12 @@
 package io.lambdacube.bndploy.install;
 
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
+import org.osgi.framework.Version;
+import org.osgi.util.tracker.BundleTracker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
@@ -8,13 +15,6 @@ import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import org.osgi.framework.Bundle;
-import org.osgi.framework.BundleContext;
-import org.osgi.framework.Version;
-import org.osgi.util.tracker.BundleTracker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public final class BundleChecker {
     private static final String SNAPSHOT_QUALIFIER = "snapshot";
@@ -39,6 +39,10 @@ public final class BundleChecker {
 
         try {
             Manifest manifest = jarFile.getManifest();
+            if (manifest == null) {
+                LOGGER.debug("Jar {} has no MANIFEST", jarFile.getName());
+                return Action.WRAP_AND_INSTALL;
+            }
             String headerBsn = manifest.getMainAttributes().getValue("Bundle-SymbolicName");
             final Version version = Version.parseVersion(manifest.getMainAttributes().getValue("Bundle-Version"));
 
@@ -62,8 +66,8 @@ public final class BundleChecker {
                     Bundle b = installedBundles.get(0);
                     if (version.equals(b.getVersion())) {
                         LOGGER.debug("Bundle {} with version {} already installed", bsn, version);
-                        
-                    
+
+
                         // The same bundle is already present, check if they're
                         // really the same or display an error
                         String installedLastModified = b.getHeaders().get("Bnd-LastModified");
