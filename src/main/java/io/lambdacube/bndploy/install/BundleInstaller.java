@@ -1,22 +1,12 @@
 package io.lambdacube.bndploy.install;
 
-import java.io.File;
-import java.io.FileFilter;
-import java.io.FileInputStream;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
-import java.util.jar.JarFile;
-import java.util.jar.Manifest;
-
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-
+import io.lambdacube.bndploy.dirwatcher.DirWatcher;
+import io.lambdacube.bndploy.dirwatcher.FileChangeListener;
+import io.lambdacube.bndploy.install.BundleChecker.Action;
 import org.ops4j.pax.tinybundles.core.TinyBundles;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleActivator;
@@ -25,9 +15,15 @@ import org.osgi.framework.BundleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.lambdacube.bndploy.dirwatcher.DirWatcher;
-import io.lambdacube.bndploy.dirwatcher.FileChangeListener;
-import io.lambdacube.bndploy.install.BundleChecker.Action;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.jar.JarFile;
+import java.util.jar.Manifest;
 
 public final class BundleInstaller implements BundleActivator {
 
@@ -44,7 +40,7 @@ public final class BundleInstaller implements BundleActivator {
     private Map<File, DirWatcher> watchers = Maps.newConcurrentMap();
 
     @Override
-    public void start(BundleContext context) throws Exception {
+    public void start(BundleContext context) {
         this.context = context;
         config = configReader.getConfig();
         bundleChecker = new BundleChecker(context, config);
@@ -64,67 +60,23 @@ public final class BundleInstaller implements BundleActivator {
     }
 
     private void deployApplications(ImmutableList<String> applicationDirs) {
+        ImmutableList.Builder<Bundle> bundlesBuilder = ImmutableList.builder();
         for (String dir : applicationDirs) {
             File fileDir = new File(dir);
-            ImmutableList<Bundle> bundles = installDirectory(fileDir);
-            startBundles(bundles);
-
+            bundlesBuilder.addAll(installDirectory(fileDir));
             if (config.watchApplicationDirs) {
-                FileChangeListener listener = new FileChangeListener() {
-
-                    @Override
-                    public void filesCreated(List<Path> pathes) {
-                        List<Bundle> bundles = Lists.newArrayList();
-                        for (Path path : pathes) {
-                            File file = path.toFile();
-                            if (file.isDirectory()) {
-                                bundles.addAll(installDirectory(file));
-                            }
-                            else {
-                                Bundle b = installOrUpdateBundle(file, false);
-                                if (b != null) {
-                                    bundles.add(b);
-                                }
-                            }
-                        }
-                        for (Bundle b : bundles) {
-                            try {
-                                b.start();
-                            } catch (BundleException e) {
-                                LOGGER.error("Error while starting bundle {}", b.getSymbolicName(), e);
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void filesUpdated(List<Path> pathes) {
-                        for (Path path : pathes) {
-                            File file = path.toFile();
-                            if (file.isDirectory()) {
-                                installDirectory(file);
-                            } else {
-                                installOrUpdateBundle(file, true);
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void filesDeleted(List<Path> pathes) {
-
-                    }
-                };
-
-                watchers.put(fileDir, new DirWatcher(fileDir.toPath(), 1500, listener));
+                watchers.put(fileDir, createDirWatcher(fileDir));
             }
         }
 
-        if (config.watchApplicationDirs) {
-            for (DirWatcher watcher : watchers.values()) {
-                try {
-                    watcher.start();
-                } catch (IOException e) {
-                    LOGGER.error("Couldn't start dirwatcher", e);
-                }
+        List<Bundle> bundles = bundlesBuilder.build();
+        startBundles(bundles);
+
+        for (DirWatcher watcher : watchers.values()) {
+            try {
+                watcher.start();
+            } catch (IOException e) {
+                LOGGER.error("Couldn't start dirwatcher", e);
             }
         }
     }
@@ -135,33 +87,71 @@ public final class BundleInstaller implements BundleActivator {
         }
         ImmutableList.Builder<Bundle> bundlesBuilder = ImmutableList.builder();
 
-        File[] jarFiles = dir.listFiles(new FilenameFilter() {
-
-            @Override
-            public boolean accept(File dir, String name) {
-                return name.endsWith(".jar");
-            }
-        });
-
-        for (File file : jarFiles) {
-            Bundle bundle = installOrUpdateBundle(file, false);
-            if (bundle != null) {
-                bundlesBuilder.add(bundle);
+        File[] jarFiles = dir.listFiles((dir1, name) -> name.endsWith(".jar"));
+        if (jarFiles != null) {
+            for (File file : jarFiles) {
+                Bundle bundle = installOrUpdateBundle(file, false);
+                if (bundle != null) {
+                    bundlesBuilder.add(bundle);
+                }
             }
         }
-        File[] subDirs = dir.listFiles(new FileFilter() {
 
-            @Override
-            public boolean accept(File file) {
-                return file.isDirectory();
+        File[] subDirs = dir.listFiles(File::isDirectory);
+        if (subDirs != null) {
+            for (File subDir : subDirs) {
+                bundlesBuilder.addAll(installDirectory(subDir));
             }
-        });
-
-        for (File subDir : subDirs) {
-            bundlesBuilder.addAll(installDirectory(subDir));
         }
 
         return bundlesBuilder.build();
+    }
+
+    private DirWatcher createDirWatcher(File fileDir) {
+        FileChangeListener listener = new FileChangeListener() {
+
+            @Override
+            public void filesCreated(List<Path> pathes) {
+                List<Bundle> bundles = Lists.newArrayList();
+                for (Path path : pathes) {
+                    File file = path.toFile();
+                    if (file.isDirectory()) {
+                        bundles.addAll(installDirectory(file));
+                    } else {
+                        Bundle b = installOrUpdateBundle(file, false);
+                        if (b != null) {
+                            bundles.add(b);
+                        }
+                    }
+                }
+                for (Bundle b : bundles) {
+                    try {
+                        b.start();
+                    } catch (BundleException e) {
+                        LOGGER.error("Error while starting bundle {}", b.getSymbolicName(), e);
+                    }
+                }
+            }
+
+            @Override
+            public void filesUpdated(List<Path> pathes) {
+                for (Path path : pathes) {
+                    File file = path.toFile();
+                    if (file.isDirectory()) {
+                        installDirectory(file);
+                    } else {
+                        installOrUpdateBundle(file, true);
+                    }
+                }
+            }
+
+            @Override
+            public void filesDeleted(List<Path> pathes) {
+
+            }
+        };
+
+        return new DirWatcher(fileDir.toPath(), 1500, listener);
     }
 
     private Bundle installOrUpdateBundle(File file, boolean update) {
@@ -176,34 +166,33 @@ public final class BundleInstaller implements BundleActivator {
                 Bundle bundle = null;
                 String location = makeLocation(jarFile);
                 switch (action) {
-                case INSTALL:
-                    LOGGER.info("Installing bundle {}", location);
-                    bundle = context.installBundle(location, inputStream);
-                    break;
-                case UPDATE:
-                    bundle = context.getBundle(location);
-                    if (bundle != null) {
-                        LOGGER.info("Updating bundle {}", location);
-                        bundle.stop();
-                        bundle.update(inputStream);
-                        bundle.start();
-                    }
-                    else {
-                        LOGGER.warn("Not updating core bundle {}", location);
-                    }
-                    break;
-                case WRAP_AND_INSTALL:
-                    LOGGER.info("Wrapping JAR {}", location);
-                    InputStream wrappingStream = TinyBundles.bundle().read(inputStream)
-                            .set("Bundle-SymbolicName", location)
-                            .build(TinyBundles.withClassicBuilder());
-                    bundle = context.installBundle(location, wrappingStream);
-                    break;
-                case STOP_FRAMEWORK:
-                    LOGGER.info("Stopping the framework!");
-                    context.getBundle(0).stop();
-                default:
-                    break;
+                    case INSTALL:
+                        LOGGER.info("Installing bundle {}", location);
+                        bundle = context.installBundle(location, inputStream);
+                        break;
+                    case UPDATE:
+                        bundle = context.getBundle(location);
+                        if (bundle != null) {
+                            LOGGER.info("Updating bundle {}", location);
+                            bundle.stop();
+                            bundle.update(inputStream);
+                            bundle.start();
+                        } else {
+                            LOGGER.warn("Not updating core bundle {}", location);
+                        }
+                        break;
+                    case WRAP_AND_INSTALL:
+                        LOGGER.info("Wrapping JAR {}", location);
+                        InputStream wrappingStream = TinyBundles.bundle().read(inputStream)
+                                .set("Bundle-SymbolicName", location)
+                                .build(TinyBundles.withClassicBuilder());
+                        bundle = context.installBundle(location, wrappingStream);
+                        break;
+                    case STOP_FRAMEWORK:
+                        LOGGER.info("Stopping the framework!");
+                        context.getBundle(0).stop();
+                    default:
+                        break;
                 }
                 return bundle;
 
@@ -240,8 +229,7 @@ public final class BundleInstaller implements BundleActivator {
                 buf.append(':');
                 buf.append(version);
             }
-        }
-        else {
+        } else {
             buf.append(jarFile.getName());
         }
         return buf.toString();
