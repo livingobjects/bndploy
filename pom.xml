@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.lambdacube.bndploy</groupId>
 	<artifactId>bndploy</artifactId>
-	<version>1.0</version>
+	<version>1.1</version>
 	<packaging>bundle</packaging>
 
 	<properties>
@@ -64,7 +64,19 @@
 						</Bundle-ClassPath>
 					</instructions>
 				</configuration>
-			</plugin>
+            </plugin>
 		</plugins>
-	</build>
+    </build>
+
+    <distributionManagement>
+        <repository>
+            <id>nexus</id>
+            <url>http://nexus.livingobjects.com/repository/releases</url>
+        </repository>
+        <snapshotRepository>
+            <id>nexus</id>
+            <url>http://nexus.livingobjects.com/repository/snapshots</url>
+        </snapshotRepository>
+    </distributionManagement>
+
 </project>
