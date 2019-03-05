@@ -44,7 +44,6 @@ public final class BundleInstaller implements BundleActivator {
         this.context = context;
         config = configReader.getConfig();
         bundleChecker = new BundleChecker(context, config);
-        LOGGER.info("Installing runtime bundles from " + Joiner.on(", ").join(config.runtimeDirs));
 
         deployRuntime(config.runtimeDirs);
 
@@ -53,13 +52,18 @@ public final class BundleInstaller implements BundleActivator {
     }
 
     private void deployRuntime(ImmutableList<String> runtimeDirs) {
+        LOGGER.info("Installing runtime bundles from : {}", Joiner.on(", ").join(runtimeDirs));
+        ImmutableList.Builder<Bundle> bundlesBuilder = ImmutableList.builder();
         for (String dir : runtimeDirs) {
-            ImmutableList<Bundle> bundles = installDirectory(new File(dir));
-            startBundles(bundles);
+            bundlesBuilder.addAll(installDirectory(new File(dir)));
         }
+        ImmutableList<Bundle> bundles = bundlesBuilder.build();
+        LOGGER.info("Starting {} runtime bundles", bundles.size());
+        startBundles(bundles);
     }
 
     private void deployApplications(ImmutableList<String> applicationDirs) {
+        LOGGER.info("Installing application bundles from : {}", Joiner.on(", ").join(applicationDirs));
         ImmutableList.Builder<Bundle> bundlesBuilder = ImmutableList.builder();
         for (String dir : applicationDirs) {
             File fileDir = new File(dir);
@@ -70,6 +74,7 @@ public final class BundleInstaller implements BundleActivator {
         }
 
         List<Bundle> bundles = bundlesBuilder.build();
+        LOGGER.info("Starting {} application bundles", bundles.size());
         startBundles(bundles);
 
         for (DirWatcher watcher : watchers.values()) {
