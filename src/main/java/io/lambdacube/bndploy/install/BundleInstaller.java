@@ -19,11 +19,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class BundleInstaller implements BundleActivator {
 
@@ -129,25 +132,21 @@ public final class BundleInstaller implements BundleActivator {
                         }
                     }
                 }
-                for (Bundle b : bundles) {
-                    try {
-                        b.start();
-                    } catch (BundleException e) {
-                        LOGGER.error("Error while starting bundle {}", b.getSymbolicName(), e);
-                    }
-                }
+                startBundles(bundles);
             }
 
             @Override
             public void filesUpdated(List<Path> pathes) {
-                for (Path path : pathes) {
-                    File file = path.toFile();
-                    if (file.isDirectory()) {
-                        installDirectory(file);
-                    } else {
-                        installOrUpdateBundle(file, true);
-                    }
-                }
+                List<Bundle> bundles = pathes.stream()
+                        .flatMap(path -> {
+                            if (Files.isDirectory(path)) {
+                                return installDirectory(path.toFile()).stream();
+                            } else {
+                                return Stream.of(installOrUpdateBundle(path.toFile(), true));
+                            }
+                        })
+                        .collect(Collectors.toList());
+                startBundles(bundles);
             }
 
             @Override
@@ -181,7 +180,6 @@ public final class BundleInstaller implements BundleActivator {
                             LOGGER.info("Updating bundle {}", location);
                             bundle.stop();
                             bundle.update(inputStream);
-                            bundle.start();
                         } else {
                             LOGGER.warn("Not updating core bundle {}", location);
                         }
