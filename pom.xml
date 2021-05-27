@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.lambdacube.bndploy</groupId>
 	<artifactId>bndploy</artifactId>
-	<version>1.4</version>
+	<version>1.5</version>
 	<packaging>bundle</packaging>
 
 	<properties>
