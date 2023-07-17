@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarFile;
@@ -97,6 +98,7 @@ public final class BundleInstaller implements BundleActivator {
 
         File[] jarFiles = dir.listFiles((dir1, name) -> name.endsWith(".jar"));
         if (jarFiles != null) {
+            Arrays.sort(jarFiles);
             for (File file : jarFiles) {
                 Bundle bundle = installOrUpdateBundle(file, false);
                 if (bundle != null) {
@@ -107,6 +109,7 @@ public final class BundleInstaller implements BundleActivator {
 
         File[] subDirs = dir.listFiles(File::isDirectory);
         if (subDirs != null) {
+            Arrays.sort(subDirs);
             for (File subDir : subDirs) {
                 bundlesBuilder.addAll(installDirectory(subDir));
             }
